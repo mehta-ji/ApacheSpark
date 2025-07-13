@@ -1,0 +1,144 @@
++-------------------------------+
+|        Driver Program         |
+| (User Application/Main Method)|
++-------------------------------+
+               |
+               v
++-------------------------------+
+|        SparkContext           |
+|   (Created by Driver)         |
++-------------------------------+
+               |
+   +-----------+-----------+
+   |           |           |
+   v           v           v
++---------+ +---------+ +---------+
+| DAGSched| | TaskSch | | Scheduler|
+|uler     | |eduler   | | Backend  |
++---------+ +---------+ +---------+
+               |
+               v
+   +-----------------------------+
+   |      Cluster Manager        |
+   | (YARN, Mesos, K8s, Stand.) |
+   +-----------------------------+
+             /   |   \
+            /    |    \
+           v     v     v
++-----------+ +-----------+ +-----------+
+|  Worker   | |  Worker   | |  Worker   |
+|   Node    | |   Node    | |   Node    |
++-----------+ +-----------+ +-----------+
+     |               |                |
+     v               v                v
++---------+     +---------+       +---------+
+| Executor|     | Executor|       | Executor|
+|   JVM   |     |   JVM   |       |   JVM   |
++---------+     +---------+       +---------+
+     |               |                |
+   [Tasks]        [Tasks]          [Tasks]
+     |               |                |
+     v               v                v
++--------------------------------------------+
+|          Distributed Storage               |
+| (HDFS, S3, HBase, Cassandra, etc.)         |
++--------------------------------------------+
+
+
+
+-------------Master Slave-----------------
+
++------------------------------------------------+
+|                Driver Program                  |
+|            (User Application/Job)              |
++------------------------------------------------+
+                |       ^         |
+       (Job Submission) |         | (Results, Status)
+                v       |         v
++-----------------------------+------------------+
+|            Master           |   Web UI         |
+| (Cluster Manager/Scheduler) | (for monitoring) |
++-----------------------------+------------------+
+          |         |         \
+   [Registers]   [Heartbeat]    \
+         |         |             \
+         v         v              v
++----------------+ +----------------+ ... +----------------+
+|  Worker Node 1 | |  Worker Node 2 |     | Worker Node N  |
++----------------+ +----------------+     +----------------+
+|                | |                |     |                |
+| +------------+ | | +------------+ |     | +------------+ |
+| | Executor(s)| | | | Executor(s)| | ... | | Executor(s)| |
+| +------------+ | | +------------+ |     | +------------+ |
+|  |   |   |     | |  |   |   |    |     |  |   |   |    | |
+| T1  T2  T3     | | T4  T5  T6    |     | Tn  ...      | |
++----------------+ +----------------+     +----------------+
+        |                |                      |
+        v                v                      v
++------------------------------------------------------------+
+|                  Distributed Storage                      |
+|    (HDFS, S3, Local FS, Hive, RDBMS, etc.)                |
++------------------------------------------------------------+
+
+Legend:
+- T1, T2, ..., Tn: Individual Tasks (run within Executors)
+
+
+==== More Details by Component ====
+1. Driver Program
+
+Runs user code (main()).
+Creates SparkContext, which connects to the Master.
+Submits jobs (logical plans: RDD/DataFrame transformations and actions).
+Receives results and status/events back.
+Coordinates DAGScheduler and TaskScheduler:
++-------------------+
+|   Driver Program  |
++-------------------+
+         |
+         v
++-------------------+   +-------------------+
+|   DAGScheduler    |→→ |  TaskScheduler    |
++-------------------+   +-------------------+
+DAGScheduler: Breaks job into stages based on data shuffles, forms execution plan.
+TaskScheduler: Assigns stages as tasks to executors on workers.
+2. Master Node
+
+Registers and monitors worker nodes (heartbeat mechanism).
+Assigns resources and schedules executors.
+Handles driver connection, job progress, and resource allocation.
+Offers a Web UI for cluster monitoring.
+3. Worker Nodes
+
+Each worker registers with the master at startup.
+Launches one or more executor JVMs per application as instructed by the master.
+Periodically sends heartbeats to the master.
+Runs tasks inside executors.
+4. Executors
+
+JVM processes running user code and Spark tasks.
+Store data in memory/disk for caching and shuffle operations.
+Communicate with driver to report status/completion.
+Can persist/cached DataFrames/RDDs.
+Responsible for reading/writing data from/to storage.
+5. Tasks
+
+Smallest unit of parallel work in Spark (constitute a stage).
+Each task typically operates on a partition of data (e.g., block of RDD).
+6. Distributed Storage
+
+Where input data resides and where Spark writes output.
+Can be HDFS, S3, Azure Blob Storage, local file system, NoSQL/SQL DBs, Hive, etc.
+==== Extra Details: Communication Flows ====
+Job Submission:
+Driver → Master (job request: logical execution graph).
+Resource Allocation:
+Master → Workers (launch executor requests).
+Task Launch:
+Driver → Executors (through TaskScheduler).
+Task Execution:
+Executors run tasks, read/write data from/to Distributed Storage.
+Heartbeat/Monitoring:
+Workers ↔ Master (liveness, metrics, resource usage).
+Result Return:
+Executors → Driver (task results, events, metrics).
